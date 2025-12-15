@@ -1,9 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.laibandis.gaba">
 
-    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
-
     <application
-        android:label="KISS Intercity Call"
-        android:allowBackup="false" />
+        android:label="LSPosed KISS"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher">
+
+        <!-- Xposed module marker -->
+        <meta-data
+            android:name="xposedmodule"
+            android:value="true"/>
+
+        <meta-data
+            android:name="xposeddescription"
+            android:value="Intercity order notifier (KISS)"/>
+
+        <meta-data
+            android:name="xposedminversion"
+            android:value="82"/>
+
+    </application>
 </manifest>

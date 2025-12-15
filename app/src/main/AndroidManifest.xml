@@ -6,18 +6,27 @@
         android:label="LSPosed KISS"
         android:allowBackup="false">
 
-        <!-- Xposed module marker -->
+        <!-- Xposed module -->
         <meta-data
             android:name="xposedmodule"
             android:value="true"/>
 
         <meta-data
             android:name="xposeddescription"
-            android:value="Intercity order notifier (KISS)"/>
+            android:value="Intercity order filter"/>
 
         <meta-data
             android:name="xposedminversion"
             android:value="82"/>
 
+        <!-- 🔧 ВАЖНО: settings activity -->
+        <meta-data
+            android:name="xposedsettings"
+            android:value="com.laibandis.gaba.SettingsActivity"/>
+
+        <!-- ⚙️ Activity настроек -->
+        <activity
+            android:name="com.laibandis.gaba.SettingsActivity"
+            android:exported="true"/>
     </application>
 </manifest>

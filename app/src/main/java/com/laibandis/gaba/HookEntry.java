@@ -2,6 +2,7 @@ package com.laibandis.gaba;
 
 import android.app.Notification;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.media.Ringtone;
 import android.media.RingtoneManager;
 import android.net.Uri;
@@ -18,12 +19,9 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
 public class HookEntry implements IXposedHookLoadPackage {
 
-    private static final int MIN_PRICE = 7000;
-
     @Override
     public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
 
-        // 👉 пакет таксометра
         if (!"sinet.startup.inDriver".equals(lpparam.packageName)) return;
 
         XposedBridge.log("KISS loaded: " + lpparam.packageName);
@@ -48,36 +46,48 @@ public class HookEntry implements IXposedHookLoadPackage {
 
                         String text = cs.toString();
 
-                        // ❌ УБИРАЕМ ГОРОДСКИЕ (только межгород с дефисом)
-                        if (!text.matches(".*[А-Яа-яA-Za-z]+\\s*-\\s*[А-Яа-яA-Za-z]+.*")) {
-                            param.setResult(null);
-                            return;
-                        }
-
-                        // 💰 ФИЛЬТР ПО ЦЕНЕ
-                        int price = extractPrice(text);
-                        if (price < MIN_PRICE) {
-                            param.setResult(null);
-                            return;
-                        }
-
-                        // 📞 ЗВОНОК
+                        Context ctx;
                         try {
-                            Context ctx = (Context)
+                            ctx = (Context)
                                     XposedHelpers.callMethod(
                                             XposedHelpers.getObjectField(param.thisObject, "mContext"),
                                             "getApplicationContext"
                                     );
+                        } catch (Throwable t) {
+                            return;
+                        }
 
+                        SharedPreferences p =
+                                ctx.getSharedPreferences("kiss_prefs", Context.MODE_PRIVATE);
+
+                        int minPrice = p.getInt("min_price", 5000);
+                        boolean onlyIntercity = p.getBoolean("only_intercity", true);
+                        boolean ignoreCity = p.getBoolean("ignore_city", true);
+
+                        // 🚕 межгород
+                        boolean isIntercity =
+                                text.matches(".*[А-Яа-яA-Za-z]+\\s*-\\s*[А-Яа-zA-Z]+.*");
+
+                        if (onlyIntercity && !isIntercity && ignoreCity) {
+                            param.setResult(null);
+                            return;
+                        }
+
+                        // 💰 цена
+                        int price = extractPrice(text);
+                        if (price < minPrice) {
+                            param.setResult(null);
+                            return;
+                        }
+
+                        // 📞 звонок
+                        try {
                             Uri uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
                             Ringtone r = RingtoneManager.getRingtone(ctx, uri);
                             if (r != null) r.play();
+                        } catch (Throwable ignored) {}
 
-                        } catch (Throwable t) {
-                            XposedBridge.log("KISS ring error: " + t);
-                        }
-
-                        // 🔕 скрываем сам пуш
+                        // 🔕 скрываем пуш
                         param.setResult(null);
                     }
                 }

@@ -4,8 +4,7 @@
 
     <application
         android:label="LSPosed KISS"
-        android:allowBackup="false"
-        android:icon="@mipmap/ic_launcher">
+        android:allowBackup="false">
 
         <!-- Xposed module marker -->
         <meta-data

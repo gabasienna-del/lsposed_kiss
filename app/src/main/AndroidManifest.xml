@@ -13,20 +13,28 @@
 
         <meta-data
             android:name="xposeddescription"
-            android:value="Intercity order filter"/>
+            android:value="Intercity order filter (KISS)"/>
 
         <meta-data
             android:name="xposedminversion"
             android:value="82"/>
 
-        <!-- 🔧 ВАЖНО: settings activity -->
+        <!-- ⚙️ SETTINGS -->
         <meta-data
             android:name="xposedsettings"
             android:value="com.laibandis.gaba.SettingsActivity"/>
 
-        <!-- ⚙️ Activity настроек -->
         <activity
             android:name="com.laibandis.gaba.SettingsActivity"
-            android:exported="true"/>
+            android:exported="true">
+
+            <!-- 🔥 КЛЮЧЕВОЙ МОМЕНТ -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="de.robv.android.xposed.category.MODULE_SETTINGS"/>
+            </intent-filter>
+
+        </activity>
+
     </application>
 </manifest>

@@ -3,7 +3,6 @@ package com.laibandis.gaba;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.os.Bundle;
-import android.service.notification.StatusBarNotification;
 
 import de.robv.android.xposed.IXposedHookLoadPackage;
 import de.robv.android.xposed.XC_MethodHook;
@@ -13,23 +12,16 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
 public class HookEntry implements IXposedHookLoadPackage {
 
-    private static final int MIN_PRICE = 5000; // 💰 фильтр от 5000 тг
-
     @Override
-    public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
+    public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lpparam) {
 
-        // 🎯 ПАКЕТ ТАКСИ (замени если нужно)
+        // ВАЖНО: укажи РЕАЛЬНЫЙ пакет приложения такси
         if (!lpparam.packageName.contains("sinet.startup.inDriver")) return;
 
-        XposedBridge.log("KISS: loaded -> " + lpparam.packageName);
-
-        Class<?> nms = XposedHelpers.findClass(
-                "android.app.NotificationManager",
-                lpparam.classLoader
-        );
+        XposedBridge.log("KISS: loaded into " + lpparam.packageName);
 
         XposedHelpers.findAndHookMethod(
-                nms,
+                NotificationManager.class,
                 "notify",
                 String.class,
                 int.class,
@@ -39,48 +31,17 @@ public class HookEntry implements IXposedHookLoadPackage {
                     @Override
                     protected void beforeHookedMethod(MethodHookParam param) {
                         Notification n = (Notification) param.args[2];
-                        if (n == null || n.extras == null) return;
+                        if (n == null) return;
 
-                        CharSequence textCs = n.extras.getCharSequence(Notification.EXTRA_TEXT);
-                        if (textCs == null) return;
+                        Bundle e = n.extras;
+                        if (e == null) return;
 
-                        String text = textCs.toString();
+                        CharSequence title = e.getCharSequence(Notification.EXTRA_TITLE);
+                        CharSequence text = e.getCharSequence(Notification.EXTRA_TEXT);
 
-                        // 📌 интересует только новый заказ
-                        if (!text.contains("НОВЫЙ ЗАКАЗ")) return;
-
-                        // 🚫 убираем городские
-                        if (!text.contains("-")) {
-                            XposedBridge.log("KISS: skip city -> " + text);
-                            param.setResult(null);
-                            return;
-                        }
-
-                        // 💰 парсим цену
-                        int price = extractPrice(text);
-
-                        if (price < MIN_PRICE) {
-                            XposedBridge.log("KISS: skip cheap " + price + " -> " + text);
-                            param.setResult(null);
-                            return;
-                        }
-
-                        // ✅ МЕЖГОРОД ПРОШЁЛ
-                        XposedBridge.log("KISS: ACCEPT " + price + " -> " + text);
+                        XposedBridge.log("KISS NOTIF → title=" + title + " text=" + text);
                     }
                 }
         );
-    }
-
-    private int extractPrice(String text) {
-        try {
-            int idx = text.indexOf("тг");
-            if (idx == -1) return 0;
-
-            String num = text.substring(0, idx).replaceAll("[^0-9]", "");
-            return Integer.parseInt(num);
-        } catch (Throwable t) {
-            return 0;
-        }
     }
 }

@@ -1,11 +1,10 @@
 package com.laibandis.gaba;
 
 import android.app.Notification;
-import android.content.Context;
+import android.app.PendingIntent;
 import android.os.Bundle;
 import android.service.notification.StatusBarNotification;
 
-import de.robv.android.xposed.AndroidAppHelper;
 import de.robv.android.xposed.IXposedHookLoadPackage;
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
@@ -15,86 +14,90 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
 public class HookEntry implements IXposedHookLoadPackage {
 
     // ===== НАСТРОЙКИ =====
-    private static final int MIN_PRICE = 5000;          // цена от
-    private static final boolean ONLY_INTERCITY = true; // только межгород
-    private static final boolean IGNORE_CITY = true;    // игнор городских
+    static int MIN_INTERCITY = 5000;
+    static int MIN_PARCEL = 3000;
+    static int MIN_COMPANION = 5000;
+
+    static boolean ONLY_INTERCITY = true;
+    static boolean IGNORE_CITY = true;
+    static boolean AUTO_OPEN = true; // ← это и есть автозвонок
 
     @Override
-    public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lpparam) {
-        if (!"sinet.startup.inDriver".equals(lpparam.packageName)) return;
+    public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
+
+        if (!lpparam.packageName.equals("sinet.startup.inDriver")) return;
 
         XposedBridge.log("KISS: loaded into " + lpparam.packageName);
 
-        try {
-            XposedHelpers.findAndHookMethod(
-                    "android.app.NotificationManager",
-                    lpparam.classLoader,
-                    "notify",
-                    String.class,
-                    int.class,
-                    Notification.class,
-                    new XC_MethodHook() {
+        Class<?> sbnClass = XposedHelpers.findClass(
+                "android.service.notification.StatusBarNotification",
+                lpparam.classLoader
+        );
 
-                        @Override
-                        protected void beforeHookedMethod(MethodHookParam param) {
-                            Notification n = (Notification) param.args[2];
-                            if (n == null) return;
+        XposedHelpers.findAndHookMethod(
+                "com.android.server.notification.NotificationManagerService",
+                lpparam.classLoader,
+                "enqueueNotificationInternal",
+                String.class, String.class, int.class, int.class,
+                String.class, int.class, Notification.class, int.class,
+                boolean.class,
+                new XC_MethodHook() {
 
-                            Bundle extras = n.extras;
-                            if (extras == null) return;
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
 
-                            CharSequence titleCs = extras.getCharSequence(Notification.EXTRA_TITLE);
-                            CharSequence textCs  = extras.getCharSequence(Notification.EXTRA_TEXT);
+                        Notification n = (Notification) param.args[6];
+                        if (n == null) return;
 
-                            if (titleCs == null || textCs == null) return;
+                        Bundle extras = n.extras;
+                        if (extras == null) return;
 
-                            String title = titleCs.toString();
-                            String text  = textCs.toString();
+                        CharSequence titleCs = extras.getCharSequence(Notification.EXTRA_TITLE);
+                        CharSequence textCs = extras.getCharSequence(Notification.EXTRA_TEXT);
 
-                            if (!title.contains("Новый заказ")) return;
+                        if (titleCs == null || textCs == null) return;
 
-                            int price = parsePrice(text);
+                        String title = titleCs.toString();
+                        String text = textCs.toString();
 
-                            XposedBridge.log("KISS: parsed price = " + price + " | text=" + text);
+                        if (!title.contains("Новый заказ")) return;
 
-                            // цена
-                            if (price < MIN_PRICE) {
-                                XposedBridge.log("KISS: ignore cheap order = " + price);
-                                param.setResult(null);
-                                return;
+                        int price = parsePrice(text);
+
+                        boolean isParcel = text.contains("посыл");
+                        boolean isCompanion = text.contains("С попутчиками");
+                        boolean isIntercity = text.contains("Алматы") && text.contains("Тараз");
+
+                        boolean allow = false;
+
+                        if (isIntercity && price >= MIN_INTERCITY) allow = true;
+                        if (isParcel && price >= MIN_PARCEL) allow = true;
+                        if (isCompanion && price >= MIN_COMPANION) allow = true;
+
+                        if (!allow) {
+                            XposedBridge.log("KISS: ignore cheap order = " + price);
+                            return;
+                        }
+
+                        XposedBridge.log("KISS: ACCEPT " + text);
+
+                        if (AUTO_OPEN && n.contentIntent != null) {
+                            try {
+                                n.contentIntent.send();
+                                XposedBridge.log("KISS: auto open order → auto call");
+                            } catch (Throwable t) {
+                                XposedBridge.log("KISS: PendingIntent failed: " + t);
                             }
-
-                            boolean intercity =
-                                    text.contains("Алматы") &&
-                                    (text.contains("Тараз") || text.contains("Шымкент"));
-
-                            if (ONLY_INTERCITY && !intercity) {
-                                XposedBridge.log("KISS: ignore city order");
-                                param.setResult(null);
-                                return;
-                            }
-
-                            if (IGNORE_CITY && text.contains("Отправить посылку")) {
-                                XposedBridge.log("KISS: ignore city parcel");
-                                param.setResult(null);
-                                return;
-                            }
-
-                            XposedBridge.log("KISS NOTIF → " + title + " | " + text);
                         }
                     }
-            );
-        } catch (Throwable t) {
-            XposedBridge.log("KISS ERROR: " + t);
-        }
+                }
+        );
     }
 
-    // ===== ПАРСИНГ ЦЕНЫ =====
-    private int parsePrice(String text) {
+    private static int parsePrice(String text) {
         try {
-            // примеры: "7 000 ₸", "8000т", "10 000 Т"
             String digits = text.replaceAll("[^0-9]", "");
-            if (digits.length() < 3) return 0;
+            if (digits.length() == 0) return 0;
             return Integer.parseInt(digits);
         } catch (Throwable t) {
             return 0;

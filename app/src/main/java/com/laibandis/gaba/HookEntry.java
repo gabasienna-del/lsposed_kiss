@@ -1,35 +1,24 @@
 package com.laibandis.gaba;
 
-import android.app.AndroidAppHelper;
 import android.app.Notification;
-import android.app.NotificationManager;
 import android.content.Context;
-import android.content.Intent;
-import android.net.Uri;
+import android.content.SharedPreferences;
 
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
-import de.robv.android.xposed.IXposedHookLoadPackage;
-import de.robv.android.xposed.XC_MethodHook;
-import de.robv.android.xposed.XposedBridge;
-import de.robv.android.xposed.XposedHelpers;
+import de.robv.android.xposed.*;
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
 public class HookEntry implements IXposedHookLoadPackage {
 
-    private static final String TAG = "KISS";
-    private static final int MIN_PRICE = 7000;
-
     @Override
-    public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lpparam) {
+    public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) {
 
         if (!"sinet.startup.inDriver".equals(lpparam.packageName)) return;
 
-        XposedBridge.log(TAG + ": loaded into " + lpparam.packageName);
+        XposedBridge.log("KISS: loaded into " + lpparam.packageName);
 
         XposedHelpers.findAndHookMethod(
-                NotificationManager.class,
+                "android.app.NotificationManager",
+                lpparam.classLoader,
                 "notify",
                 String.class,
                 int.class,
@@ -37,74 +26,87 @@ public class HookEntry implements IXposedHookLoadPackage {
                 new XC_MethodHook() {
 
                     @Override
-                    protected void afterHookedMethod(MethodHookParam param) {
+                    protected void beforeHookedMethod(MethodHookParam param) {
 
                         Notification n = (Notification) param.args[2];
                         if (n == null || n.extras == null) return;
 
-                        String title = String.valueOf(n.extras.get(Notification.EXTRA_TITLE));
-                        CharSequence big = n.extras.getCharSequence(Notification.EXTRA_BIG_TEXT);
-                        String text = big != null
-                                ? big.toString()
-                                : String.valueOf(n.extras.get(Notification.EXTRA_TEXT));
+                        String text = String.valueOf(
+                                n.extras.getCharSequence(Notification.EXTRA_TEXT, "")
+                        );
 
-                        if (title == null || text == null) return;
-                        if (!title.contains("Новый заказ")) return;
+                        Context ctx = AndroidAppHelper.currentApplication();
+                        SharedPreferences p =
+                                ctx.getSharedPreferences("com.laibandis.gaba_preferences", 0);
 
-                        int price = extractPrice(text);
+                        int price = parsePrice(text);
 
-                        XposedBridge.log(TAG + ": parsed price = " + price + " | text=" + text);
+                        boolean isPackage =
+                                text.contains("посыл") || text.contains("пакет");
 
-                        if (price < MIN_PRICE) {
-                            XposedBridge.log(TAG + ": ignore cheap order = " + price);
+                        boolean isCompanion =
+                                text.contains("С попутчиками");
+
+                        // --- ПОСЫЛКА ---
+                        if (isPackage) {
+                            if (!p.getBoolean("enable_package", false)) {
+                                param.setResult(null);
+                                return;
+                            }
+                            int min = getInt(p, "min_price_package", 4000);
+                            if (price < min) {
+                                param.setResult(null);
+                                return;
+                            }
+                            XposedBridge.log("KISS: package OK " + price);
                             return;
                         }
 
-                        // проверка межгорода (тире - или –)
-                        if (!(text.contains("-") || text.contains("–"))) {
-                            XposedBridge.log(TAG + ": ignore city order");
+                        // --- ПОПУТЧИКИ ---
+                        if (isCompanion) {
+                            if (!p.getBoolean("enable_companion", true)) {
+                                param.setResult(null);
+                                return;
+                            }
+                            int min = getInt(p, "min_price_companion", 6000);
+                            if (price < min) {
+                                param.setResult(null);
+                                return;
+                            }
+                            XposedBridge.log("KISS: companion OK " + price);
                             return;
                         }
 
-                        XposedBridge.log(TAG + ": ACCEPT intercity " + price);
-                        autoDial();
+                        // --- ПАССАЖИР ---
+                        if (!p.getBoolean("enable_passenger", true)) {
+                            param.setResult(null);
+                            return;
+                        }
+                        int min = getInt(p, "min_price_passenger", 5000);
+                        if (price < min) {
+                            param.setResult(null);
+                            return;
+                        }
+
+                        XposedBridge.log("KISS: passenger OK " + price);
                     }
                 }
         );
     }
 
-    private int extractPrice(String text) {
+    private int parsePrice(String s) {
         try {
-            // убираем ВСЁ кроме цифр
-            String clean = text
-                    .replace('\u00A0', ' ')   // неразрывный пробел
-                    .replaceAll("[^0-9]", "");
-
-            Pattern p = Pattern.compile("(\\d{3,})");
-            Matcher m = p.matcher(clean);
-            if (m.find()) {
-                return Integer.parseInt(m.group(1));
-            }
-        } catch (Throwable t) {
-            XposedBridge.log(TAG + ": price parse error " + t);
-        }
+            String d = s.replaceAll("[^0-9]", "");
+            if (d.length() >= 4) return Integer.parseInt(d);
+        } catch (Throwable ignored) {}
         return 0;
     }
 
-    private void autoDial() {
+    private int getInt(SharedPreferences p, String k, int def) {
         try {
-            Context ctx = AndroidAppHelper.currentApplication();
-            if (ctx == null) return;
-
-            Intent i = new Intent(Intent.ACTION_DIAL);
-            i.setData(Uri.parse("tel:"));
-            i.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            ctx.startActivity(i);
-
-            XposedBridge.log(TAG + ": auto dial started");
-
-        } catch (Throwable t) {
-            XposedBridge.log(TAG + ": dial error " + t);
+            return Integer.parseInt(p.getString(k, String.valueOf(def)));
+        } catch (Throwable e) {
+            return def;
         }
     }
 }

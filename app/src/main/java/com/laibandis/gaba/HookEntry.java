@@ -1,8 +1,11 @@
 package com.laibandis.gaba;
 
-import android.content.Intent;
+import android.app.AndroidAppHelper;
+import android.app.Application;
+import android.text.TextUtils;
 
-import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import de.robv.android.xposed.IXposedHookLoadPackage;
 import de.robv.android.xposed.XC_MethodHook;
@@ -12,105 +15,88 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
 public class HookEntry implements IXposedHookLoadPackage {
 
-    // ===== ФИЛЬТРЫ =====
-    static int MIN_INTERCITY = 5000;
-    static int MIN_PARCEL = 3000;
-    static int MIN_COMPANION = 5000;
+    // ====== НАСТРОЙКИ ======
+    private static final int MIN_PRICE = 5000;
+    private static final boolean ONLY_INTERCITY = true;
+    private static final boolean IGNORE_CITY = true;
 
-    static boolean AUTO_OPEN = true;
+    // шаблон цены: 7 000 ₸ / 7000т / 8000 тг
+    private static final Pattern PRICE_PATTERN =
+            Pattern.compile("(\\d{1,3}(?:[ \\u00A0]?\\d{3})*)\\s*[₸тТгГ]");
 
     @Override
-    public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
+    public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
 
         if (!"sinet.startup.inDriver".equals(lpparam.packageName)) return;
 
         XposedBridge.log("KISS: loaded into " + lpparam.packageName);
 
-        Class<?> firebaseService = XposedHelpers.findClass(
-                "com.google.firebase.messaging.FirebaseMessagingService",
-                lpparam.classLoader
-        );
+        try {
+            XposedHelpers.findAndHookMethod(
+                    "sinet.startup.inDriver.services.push.AppFcmListenerService",
+                    lpparam.classLoader,
+                    "onMessageReceived",
+                    Object.class,
+                    new XC_MethodHook() {
 
-        // 🔥 ХУКАЕМ ВСЕ onMessageReceived()
-        XposedBridge.hookAllMethods(
-                firebaseService,
-                "onMessageReceived",
-                new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
 
-                    @Override
-                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                            Object msg = param.args[0];
+                            if (msg == null) return;
 
-                        if (param.args == null || param.args.length == 0) return;
+                            String raw = msg.toString();
+                            XposedBridge.log("KISS FCM RAW → " + raw);
 
-                        Object remoteMsg = param.args[0];
-                        if (remoteMsg == null) return;
+                            int price = parsePrice(raw);
+                            boolean intercity = isIntercity(raw);
 
-                        Map data;
-                        try {
-                            data = (Map) XposedHelpers.callMethod(remoteMsg, "getData");
-                        } catch (Throwable t) {
-                            return;
-                        }
+                            XposedBridge.log("KISS parsed price = " + price +
+                                    " | intercity=" + intercity);
 
-                        if (data == null) return;
-
-                        String text = data.toString();
-                        int price = parsePrice(text);
-
-                        boolean isIntercity =
-                                text.contains("Алматы") && text.contains("Тараз");
-
-                        boolean isParcel = text.contains("посыл");
-                        boolean isCompanion = text.contains("попут");
-
-                        boolean allow = false;
-
-                        if (isIntercity && price >= MIN_INTERCITY) allow = true;
-                        if (isParcel && price >= MIN_PARCEL) allow = true;
-                        if (isCompanion && price >= MIN_COMPANION) allow = true;
-
-                        if (!allow) {
-                            XposedBridge.log("KISS: ignore order = " + price);
-                            return;
-                        }
-
-                        XposedBridge.log("KISS ACCEPT → " + text);
-
-                        if (AUTO_OPEN) {
-                            try {
-                                Object app = XposedHelpers.callStaticMethod(
-                                        XposedHelpers.findClass(
-                                                "android.app.ActivityThread",
-                                                lpparam.classLoader
-                                        ),
-                                        "currentApplication"
-                                );
-
-                                Intent i = new Intent();
-                                i.setClassName(
-                                        "sinet.startup.inDriver",
-                                        "sinet.startup.inDriver.ui.order.OrderActivity"
-                                );
-                                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                                XposedHelpers.callMethod(app, "startActivity", i);
-
-                                XposedBridge.log("KISS: auto open order screen");
-                            } catch (Throwable t) {
-                                XposedBridge.log("KISS: open failed " + t);
+                            if (price < MIN_PRICE) {
+                                XposedBridge.log("KISS: ignore cheap order = " + price);
+                                return;
                             }
+
+                            if (ONLY_INTERCITY && !intercity) {
+                                XposedBridge.log("KISS: ignore city order");
+                                return;
+                            }
+
+                            if (IGNORE_CITY && raw.contains("Отправить посылку")) {
+                                XposedBridge.log("KISS: ignore parcel");
+                                return;
+                            }
+
+                            XposedBridge.log("KISS ACCEPT → " + price);
+                            // дальше: автопринятие / автозвонок
+
                         }
                     }
-                }
-        );
+            );
+        } catch (Throwable t) {
+            XposedBridge.log("KISS ERROR: " + t);
+        }
     }
 
-    private static int parsePrice(String text) {
+    // ====== PARSE PRICE ======
+    private int parsePrice(String text) {
+        if (TextUtils.isEmpty(text)) return 0;
+
+        Matcher m = PRICE_PATTERN.matcher(text);
+        if (!m.find()) return 0;
+
         try {
-            String digits = text.replaceAll("[^0-9]", "");
-            if (digits.isEmpty()) return 0;
-            return Integer.parseInt(digits);
-        } catch (Throwable t) {
+            String num = m.group(1).replace(" ", "").replace("\u00A0", "");
+            return Integer.parseInt(num);
+        } catch (Throwable e) {
             return 0;
         }
+    }
+
+    // ====== INTERCITY CHECK ======
+    private boolean isIntercity(String text) {
+        return text.contains("Алматы") && text.contains("Тараз");
     }
 }

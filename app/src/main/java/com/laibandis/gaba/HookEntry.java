@@ -2,111 +2,102 @@ package com.laibandis.gaba;
 
 import android.app.Notification;
 import android.content.Context;
-import android.content.SharedPreferences;
+import android.os.Bundle;
+import android.service.notification.StatusBarNotification;
 
-import de.robv.android.xposed.*;
+import de.robv.android.xposed.AndroidAppHelper;
+import de.robv.android.xposed.IXposedHookLoadPackage;
+import de.robv.android.xposed.XC_MethodHook;
+import de.robv.android.xposed.XposedBridge;
+import de.robv.android.xposed.XposedHelpers;
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
 public class HookEntry implements IXposedHookLoadPackage {
 
-    @Override
-    public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) {
+    // ===== НАСТРОЙКИ =====
+    private static final int MIN_PRICE = 5000;          // цена от
+    private static final boolean ONLY_INTERCITY = true; // только межгород
+    private static final boolean IGNORE_CITY = true;    // игнор городских
 
+    @Override
+    public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lpparam) {
         if (!"sinet.startup.inDriver".equals(lpparam.packageName)) return;
 
         XposedBridge.log("KISS: loaded into " + lpparam.packageName);
 
-        XposedHelpers.findAndHookMethod(
-                "android.app.NotificationManager",
-                lpparam.classLoader,
-                "notify",
-                String.class,
-                int.class,
-                Notification.class,
-                new XC_MethodHook() {
+        try {
+            XposedHelpers.findAndHookMethod(
+                    "android.app.NotificationManager",
+                    lpparam.classLoader,
+                    "notify",
+                    String.class,
+                    int.class,
+                    Notification.class,
+                    new XC_MethodHook() {
 
-                    @Override
-                    protected void beforeHookedMethod(MethodHookParam param) {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) {
+                            Notification n = (Notification) param.args[2];
+                            if (n == null) return;
 
-                        Notification n = (Notification) param.args[2];
-                        if (n == null || n.extras == null) return;
+                            Bundle extras = n.extras;
+                            if (extras == null) return;
 
-                        String text = String.valueOf(
-                                n.extras.getCharSequence(Notification.EXTRA_TEXT, "")
-                        );
+                            CharSequence titleCs = extras.getCharSequence(Notification.EXTRA_TITLE);
+                            CharSequence textCs  = extras.getCharSequence(Notification.EXTRA_TEXT);
 
-                        Context ctx = AndroidAppHelper.currentApplication();
-                        SharedPreferences p =
-                                ctx.getSharedPreferences("com.laibandis.gaba_preferences", 0);
+                            if (titleCs == null || textCs == null) return;
 
-                        int price = parsePrice(text);
+                            String title = titleCs.toString();
+                            String text  = textCs.toString();
 
-                        boolean isPackage =
-                                text.contains("посыл") || text.contains("пакет");
+                            if (!title.contains("Новый заказ")) return;
 
-                        boolean isCompanion =
-                                text.contains("С попутчиками");
+                            int price = parsePrice(text);
 
-                        // --- ПОСЫЛКА ---
-                        if (isPackage) {
-                            if (!p.getBoolean("enable_package", false)) {
+                            XposedBridge.log("KISS: parsed price = " + price + " | text=" + text);
+
+                            // цена
+                            if (price < MIN_PRICE) {
+                                XposedBridge.log("KISS: ignore cheap order = " + price);
                                 param.setResult(null);
                                 return;
                             }
-                            int min = getInt(p, "min_price_package", 4000);
-                            if (price < min) {
+
+                            boolean intercity =
+                                    text.contains("Алматы") &&
+                                    (text.contains("Тараз") || text.contains("Шымкент"));
+
+                            if (ONLY_INTERCITY && !intercity) {
+                                XposedBridge.log("KISS: ignore city order");
                                 param.setResult(null);
                                 return;
                             }
-                            XposedBridge.log("KISS: package OK " + price);
-                            return;
-                        }
 
-                        // --- ПОПУТЧИКИ ---
-                        if (isCompanion) {
-                            if (!p.getBoolean("enable_companion", true)) {
+                            if (IGNORE_CITY && text.contains("Отправить посылку")) {
+                                XposedBridge.log("KISS: ignore city parcel");
                                 param.setResult(null);
                                 return;
                             }
-                            int min = getInt(p, "min_price_companion", 6000);
-                            if (price < min) {
-                                param.setResult(null);
-                                return;
-                            }
-                            XposedBridge.log("KISS: companion OK " + price);
-                            return;
-                        }
 
-                        // --- ПАССАЖИР ---
-                        if (!p.getBoolean("enable_passenger", true)) {
-                            param.setResult(null);
-                            return;
+                            XposedBridge.log("KISS NOTIF → " + title + " | " + text);
                         }
-                        int min = getInt(p, "min_price_passenger", 5000);
-                        if (price < min) {
-                            param.setResult(null);
-                            return;
-                        }
-
-                        XposedBridge.log("KISS: passenger OK " + price);
                     }
-                }
-        );
+            );
+        } catch (Throwable t) {
+            XposedBridge.log("KISS ERROR: " + t);
+        }
     }
 
-    private int parsePrice(String s) {
+    // ===== ПАРСИНГ ЦЕНЫ =====
+    private int parsePrice(String text) {
         try {
-            String d = s.replaceAll("[^0-9]", "");
-            if (d.length() >= 4) return Integer.parseInt(d);
-        } catch (Throwable ignored) {}
-        return 0;
-    }
-
-    private int getInt(SharedPreferences p, String k, int def) {
-        try {
-            return Integer.parseInt(p.getString(k, String.valueOf(def)));
-        } catch (Throwable e) {
-            return def;
+            // примеры: "7 000 ₸", "8000т", "10 000 Т"
+            String digits = text.replaceAll("[^0-9]", "");
+            if (digits.length() < 3) return 0;
+            return Integer.parseInt(digits);
+        } catch (Throwable t) {
+            return 0;
         }
     }
 }

@@ -1,7 +1,6 @@
 package com.laibandis.gaba;
 
 import android.content.Intent;
-import android.os.Bundle;
 
 import java.util.Map;
 
@@ -13,7 +12,7 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
 public class HookEntry implements IXposedHookLoadPackage {
 
-    // ===== НАСТРОЙКИ =====
+    // ===== ФИЛЬТРЫ =====
     static int MIN_INTERCITY = 5000;
     static int MIN_PARCEL = 3000;
     static int MIN_COMPANION = 5000;
@@ -27,24 +26,32 @@ public class HookEntry implements IXposedHookLoadPackage {
 
         XposedBridge.log("KISS: loaded into " + lpparam.packageName);
 
-        Class<?> fcmService = XposedHelpers.findClass(
-                "sinet.startup.inDriver.services.push.AppFcmListenerService",
+        Class<?> firebaseService = XposedHelpers.findClass(
+                "com.google.firebase.messaging.FirebaseMessagingService",
                 lpparam.classLoader
         );
 
-        XposedHelpers.findAndHookMethod(
-                fcmService,
+        // 🔥 ХУКАЕМ ВСЕ onMessageReceived()
+        XposedBridge.hookAllMethods(
+                firebaseService,
                 "onMessageReceived",
-                Object.class,
                 new XC_MethodHook() {
 
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) throws Throwable {
 
+                        if (param.args == null || param.args.length == 0) return;
+
                         Object remoteMsg = param.args[0];
                         if (remoteMsg == null) return;
 
-                        Map data = (Map) XposedHelpers.callMethod(remoteMsg, "getData");
+                        Map data;
+                        try {
+                            data = (Map) XposedHelpers.callMethod(remoteMsg, "getData");
+                        } catch (Throwable t) {
+                            return;
+                        }
+
                         if (data == null) return;
 
                         String text = data.toString();
@@ -63,7 +70,7 @@ public class HookEntry implements IXposedHookLoadPackage {
                         if (isCompanion && price >= MIN_COMPANION) allow = true;
 
                         if (!allow) {
-                            XposedBridge.log("KISS: ignore cheap order = " + price);
+                            XposedBridge.log("KISS: ignore order = " + price);
                             return;
                         }
 
@@ -87,7 +94,7 @@ public class HookEntry implements IXposedHookLoadPackage {
                                 i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                                 XposedHelpers.callMethod(app, "startActivity", i);
 
-                                XposedBridge.log("KISS: auto open → auto call");
+                                XposedBridge.log("KISS: auto open order screen");
                             } catch (Throwable t) {
                                 XposedBridge.log("KISS: open failed " + t);
                             }

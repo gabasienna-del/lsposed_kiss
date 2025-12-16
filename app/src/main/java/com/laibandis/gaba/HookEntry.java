@@ -6,7 +6,6 @@ import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
-import android.os.Bundle;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -25,7 +24,7 @@ public class HookEntry implements IXposedHookLoadPackage {
     @Override
     public void handleLoadPackage(final XC_LoadPackage.LoadPackageParam lpparam) {
 
-        if (!lpparam.packageName.equals("sinet.startup.inDriver")) return;
+        if (!"sinet.startup.inDriver".equals(lpparam.packageName)) return;
 
         XposedBridge.log(TAG + ": loaded into " + lpparam.packageName);
 
@@ -50,7 +49,6 @@ public class HookEntry implements IXposedHookLoadPackage {
                                 : String.valueOf(n.extras.get(Notification.EXTRA_TEXT));
 
                         if (title == null || text == null) return;
-
                         if (!title.contains("Новый заказ")) return;
 
                         int price = extractPrice(text);
@@ -62,12 +60,13 @@ public class HookEntry implements IXposedHookLoadPackage {
                             return;
                         }
 
-                        if (!text.contains("–") && !text.contains("-")) {
+                        // проверка межгорода (тире - или –)
+                        if (!(text.contains("-") || text.contains("–"))) {
                             XposedBridge.log(TAG + ": ignore city order");
                             return;
                         }
 
-                        XposedBridge.log(TAG + " ACCEPT → " + title + " | " + text);
+                        XposedBridge.log(TAG + ": ACCEPT intercity " + price);
                         autoDial();
                     }
                 }
@@ -76,19 +75,19 @@ public class HookEntry implements IXposedHookLoadPackage {
 
     private int extractPrice(String text) {
         try {
+            // убираем ВСЁ кроме цифр
             String clean = text
-                    .replace("₸", "")
-                    .replace("т", "")
-                    .replace("Т", "")
-                    .replace(" ", "")
-                    .replace(".", "");
+                    .replace('\u00A0', ' ')   // неразрывный пробел
+                    .replaceAll("[^0-9]", "");
 
             Pattern p = Pattern.compile("(\\d{3,})");
             Matcher m = p.matcher(clean);
             if (m.find()) {
                 return Integer.parseInt(m.group(1));
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) {
+            XposedBridge.log(TAG + ": price parse error " + t);
+        }
         return 0;
     }
 

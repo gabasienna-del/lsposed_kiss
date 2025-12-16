@@ -3,7 +3,7 @@ package com.laibandis.gaba;
 import android.content.Intent;
 import android.os.Bundle;
 
-import com.google.firebase.messaging.RemoteMessage;
+import java.util.Map;
 
 import de.robv.android.xposed.IXposedHookLoadPackage;
 import de.robv.android.xposed.XC_MethodHook;
@@ -13,7 +13,7 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
 public class HookEntry implements IXposedHookLoadPackage {
 
-    // ===== ФИЛЬТРЫ =====
+    // ===== НАСТРОЙКИ =====
     static int MIN_INTERCITY = 5000;
     static int MIN_PARCEL = 3000;
     static int MIN_COMPANION = 5000;
@@ -23,7 +23,7 @@ public class HookEntry implements IXposedHookLoadPackage {
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
 
-        if (!lpparam.packageName.equals("sinet.startup.inDriver")) return;
+        if (!"sinet.startup.inDriver".equals(lpparam.packageName)) return;
 
         XposedBridge.log("KISS: loaded into " + lpparam.packageName);
 
@@ -35,22 +35,19 @@ public class HookEntry implements IXposedHookLoadPackage {
         XposedHelpers.findAndHookMethod(
                 fcmService,
                 "onMessageReceived",
-                RemoteMessage.class,
+                Object.class,
                 new XC_MethodHook() {
 
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) throws Throwable {
 
-                        RemoteMessage msg = (RemoteMessage) param.args[0];
-                        if (msg == null) return;
+                        Object remoteMsg = param.args[0];
+                        if (remoteMsg == null) return;
 
-                        Bundle data = new Bundle();
-                        for (String k : msg.getData().keySet()) {
-                            data.putString(k, msg.getData().get(k));
-                        }
+                        Map data = (Map) XposedHelpers.callMethod(remoteMsg, "getData");
+                        if (data == null) return;
 
                         String text = data.toString();
-
                         int price = parsePrice(text);
 
                         boolean isIntercity =
@@ -70,27 +67,25 @@ public class HookEntry implements IXposedHookLoadPackage {
                             return;
                         }
 
-                        XposedBridge.log("KISS: ACCEPT → " + text);
+                        XposedBridge.log("KISS ACCEPT → " + text);
 
                         if (AUTO_OPEN) {
                             try {
+                                Object app = XposedHelpers.callStaticMethod(
+                                        XposedHelpers.findClass(
+                                                "android.app.ActivityThread",
+                                                lpparam.classLoader
+                                        ),
+                                        "currentApplication"
+                                );
+
                                 Intent i = new Intent();
                                 i.setClassName(
                                         "sinet.startup.inDriver",
                                         "sinet.startup.inDriver.ui.order.OrderActivity"
                                 );
                                 i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                                XposedHelpers.callMethod(
-                                        XposedHelpers.callStaticMethod(
-                                                XposedHelpers.findClass(
-                                                        "android.app.ActivityThread",
-                                                        lpparam.classLoader
-                                                ),
-                                                "currentApplication"
-                                        ),
-                                        "startActivity",
-                                        i
-                                );
+                                XposedHelpers.callMethod(app, "startActivity", i);
 
                                 XposedBridge.log("KISS: auto open → auto call");
                             } catch (Throwable t) {

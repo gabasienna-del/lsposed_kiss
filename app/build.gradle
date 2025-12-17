@@ -15,15 +15,20 @@ android {
     }
 
     buildTypes {
-        release {
+        debug {
             minifyEnabled false
         }
-        debug {
+        release {
             minifyEnabled false
         }
     }
 }
 
 dependencies {
+    // LSPosed / Xposed API
     compileOnly files('libs/api-82.jar')
+
+    // 🔥 OKHTTP / OKIO — ТОЛЬКО ДЛЯ КОМПИЛЯЦИИ
+    compileOnly "com.squareup.okhttp3:okhttp:4.12.0"
+    compileOnly "com.squareup.okio:okio:3.7.0"
 }

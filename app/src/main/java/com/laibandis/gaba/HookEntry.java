@@ -6,9 +6,6 @@ import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
-import okio.Buffer;
-import okio.BufferedSink;
-
 public class HookEntry implements IXposedHookLoadPackage {
 
     private static final String TARGET_PKG = "sinet.startup.inDriver";
@@ -18,31 +15,57 @@ public class HookEntry implements IXposedHookLoadPackage {
     }
 
     @Override
-    public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) throws Throwable {
+    public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) {
 
-        if (!lpparam.packageName.equals(TARGET_PKG)) return;
+        if (!TARGET_PKG.equals(lpparam.packageName)) return;
 
         XposedBridge.log("✅ laibandis.gaba hooked: " + lpparam.packageName);
 
-        XposedHelpers.findAndHookMethod(
-                "okhttp3.RequestBody",
-                lpparam.classLoader,
-                "writeTo",
-                BufferedSink.class,
-                new XC_MethodHook() {
-                    @Override
-                    protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                        Buffer buffer = new Buffer();
-                        ((okhttp3.RequestBody) param.thisObject).writeTo(buffer);
-                        String json = buffer.readUtf8();
-                        if (json != null && (json.contains("intercity")
-                                || json.contains("confirmed")
-                                || json.contains("accept")
-                                || json.contains("bid_accept"))) {
-                            XposedBridge.log("📦 JSON: " + json);
+        try {
+            Class<?> requestBodyCls =
+                    XposedHelpers.findClass("okhttp3.RequestBody", lpparam.classLoader);
+
+            XposedHelpers.findAndHookMethod(
+                    requestBodyCls,
+                    "writeTo",
+                    Object.class,   // ❗ НЕ BufferedSink
+                    new XC_MethodHook() {
+
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) {
+
+                            try {
+                                Object sink = param.args[0];
+
+                                // okio.Buffer buffer = new Buffer();
+                                Object buffer = XposedHelpers.newInstance(
+                                        XposedHelpers.findClass("okio.Buffer", lpparam.classLoader)
+                                );
+
+                                // requestBody.writeTo(buffer)
+                                XposedHelpers.callMethod(param.thisObject, "writeTo", buffer);
+
+                                // buffer.readUtf8()
+                                String json = (String) XposedHelpers.callMethod(buffer, "readUtf8");
+
+                                if (json != null &&
+                                        (json.contains("intercity")
+                                        || json.contains("confirmed")
+                                        || json.contains("accept")
+                                        || json.contains("bid_accept"))) {
+
+                                    XposedBridge.log("📦 JSON: " + json);
+                                }
+
+                            } catch (Throwable t) {
+                                XposedBridge.log("❌ JSON hook error: " + t);
+                            }
                         }
                     }
-                }
-        );
+            );
+
+        } catch (Throwable t) {
+            XposedBridge.log("❌ Hook setup failed: " + t);
+        }
     }
 }

@@ -1,0 +1,2 @@
+-keep class com.gaba.eskukap.xposed.HookEntry { *; }
+-keep class de.robv.android.xposed.** { *; }

@@ -23,36 +23,53 @@ public class HookEntry implements IXposedHookLoadPackage {
 
         try {
             Class<?> requestBodyCls =
-                    XposedHelpers.findClass("okhttp3.RequestBody", lpparam.classLoader);
+                    XposedHelpers.findClass(
+                            "okhttp3.RequestBody",
+                            lpparam.classLoader
+                    );
+
+            Class<?> bufferedSinkCls =
+                    XposedHelpers.findClass(
+                            "okio.BufferedSink",
+                            lpparam.classLoader
+                    );
 
             XposedHelpers.findAndHookMethod(
                     requestBodyCls,
                     "writeTo",
-                    Object.class,   // ❗ НЕ BufferedSink
+                    bufferedSinkCls,   // ✅ РЕАЛЬНАЯ СИГНАТУРА
                     new XC_MethodHook() {
 
                         @Override
                         protected void beforeHookedMethod(MethodHookParam param) {
 
                             try {
-                                Object sink = param.args[0];
-
                                 // okio.Buffer buffer = new Buffer();
                                 Object buffer = XposedHelpers.newInstance(
-                                        XposedHelpers.findClass("okio.Buffer", lpparam.classLoader)
+                                        XposedHelpers.findClass(
+                                                "okio.Buffer",
+                                                lpparam.classLoader
+                                        )
                                 );
 
                                 // requestBody.writeTo(buffer)
-                                XposedHelpers.callMethod(param.thisObject, "writeTo", buffer);
+                                XposedHelpers.callMethod(
+                                        param.thisObject,
+                                        "writeTo",
+                                        buffer
+                                );
 
                                 // buffer.readUtf8()
-                                String json = (String) XposedHelpers.callMethod(buffer, "readUtf8");
+                                String json = (String) XposedHelpers.callMethod(
+                                        buffer,
+                                        "readUtf8"
+                                );
 
                                 if (json != null &&
                                         (json.contains("intercity")
-                                        || json.contains("confirmed")
-                                        || json.contains("accept")
-                                        || json.contains("bid_accept"))) {
+                                                || json.contains("confirmed")
+                                                || json.contains("accept")
+                                                || json.contains("bid_accept"))) {
 
                                     XposedBridge.log("📦 JSON: " + json);
                                 }

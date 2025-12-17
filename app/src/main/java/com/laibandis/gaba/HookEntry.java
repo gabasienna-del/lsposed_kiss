@@ -21,30 +21,66 @@ public class HookEntry implements IXposedHookLoadPackage {
 
         XposedBridge.log("✅ laibandis.gaba hooked: " + lpparam.packageName);
 
+        /* ===============================
+           🔑 HOOK HEADERS (TOKEN)
+           =============================== */
         try {
-            Class<?> requestBodyCls =
-                    XposedHelpers.findClass(
-                            "okhttp3.RequestBody",
-                            lpparam.classLoader
-                    );
+            Class<?> builderCls = XposedHelpers.findClass(
+                    "okhttp3.Request$Builder",
+                    lpparam.classLoader
+            );
 
-            Class<?> bufferedSinkCls =
-                    XposedHelpers.findClass(
-                            "okio.BufferedSink",
-                            lpparam.classLoader
-                    );
+            XposedBridge.hookAllMethods(
+                    builderCls,
+                    "addHeader",
+                    new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) {
+
+                            String key = String.valueOf(param.args[0]);
+                            String value = String.valueOf(param.args[1]);
+
+                            String k = key.toLowerCase();
+
+                            if (k.contains("token") || k.contains("authorization")) {
+                                XposedBridge.log(
+                                        "🔑 GABA TOKEN ▶ " + key + " = " + value
+                                );
+                            }
+                        }
+                    }
+            );
+
+            XposedBridge.log("✅ Header hook installed");
+
+        } catch (Throwable t) {
+            XposedBridge.log("❌ Header hook failed: " + t);
+        }
+
+        /* ===============================
+           📦 HOOK REQUEST BODY (JSON)
+           =============================== */
+        try {
+            Class<?> requestBodyCls = XposedHelpers.findClass(
+                    "okhttp3.RequestBody",
+                    lpparam.classLoader
+            );
+
+            Class<?> bufferedSinkCls = XposedHelpers.findClass(
+                    "okio.BufferedSink",
+                    lpparam.classLoader
+            );
 
             XposedHelpers.findAndHookMethod(
                     requestBodyCls,
                     "writeTo",
-                    bufferedSinkCls,   // ✅ РЕАЛЬНАЯ СИГНАТУРА
+                    bufferedSinkCls,
                     new XC_MethodHook() {
 
                         @Override
                         protected void beforeHookedMethod(MethodHookParam param) {
 
                             try {
-                                // okio.Buffer buffer = new Buffer();
                                 Object buffer = XposedHelpers.newInstance(
                                         XposedHelpers.findClass(
                                                 "okio.Buffer",
@@ -52,26 +88,25 @@ public class HookEntry implements IXposedHookLoadPackage {
                                         )
                                 );
 
-                                // requestBody.writeTo(buffer)
                                 XposedHelpers.callMethod(
                                         param.thisObject,
                                         "writeTo",
                                         buffer
                                 );
 
-                                // buffer.readUtf8()
                                 String json = (String) XposedHelpers.callMethod(
                                         buffer,
                                         "readUtf8"
                                 );
 
                                 if (json != null &&
-                                        (json.contains("intercity")
+                                        (json.contains("order")
+                                                || json.contains("intercity")
                                                 || json.contains("confirmed")
                                                 || json.contains("accept")
                                                 || json.contains("bid_accept"))) {
 
-                                    XposedBridge.log("📦 JSON: " + json);
+                                    XposedBridge.log("📦 GABA JSON ▶ " + json);
                                 }
 
                             } catch (Throwable t) {
@@ -81,8 +116,10 @@ public class HookEntry implements IXposedHookLoadPackage {
                     }
             );
 
+            XposedBridge.log("✅ RequestBody hook installed");
+
         } catch (Throwable t) {
-            XposedBridge.log("❌ Hook setup failed: " + t);
+            XposedBridge.log("❌ RequestBody hook failed: " + t);
         }
     }
 }

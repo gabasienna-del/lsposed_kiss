@@ -3,11 +3,11 @@ plugins {
 }
 
 android {
-    namespace "com.laibandis.gaba"
+    namespace "com.gaba.eskukap"
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.laibandis.gaba"
+        applicationId "com.gaba.eskukap"
         minSdk 26
         targetSdk 34
         versionCode 1
@@ -15,12 +15,12 @@ android {
     }
 
     buildTypes {
-        debug {
+        release {
             minifyEnabled false
         }
     }
 }
 
 dependencies {
-    compileOnly files("libs/api-82.jar")
+    compileOnly files('libs/api-82.jar')
 }

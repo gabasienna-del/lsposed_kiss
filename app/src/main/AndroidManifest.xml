@@ -1,40 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.laibandis.gaba">
+    package="com.gaba.eskukap">
 
     <application
-        android:label="LSPosed KISS"
-        android:allowBackup="false">
+        android:label="lsposed_kiss"
+        android:allowBackup="false" />
 
-        <!-- Xposed module -->
-        <meta-data
-            android:name="xposedmodule"
-            android:value="true"/>
-
-        <meta-data
-            android:name="xposeddescription"
-            android:value="Intercity order filter (KISS)"/>
-
-        <meta-data
-            android:name="xposedminversion"
-            android:value="82"/>
-
-        <!-- ⚙️ SETTINGS -->
-        <meta-data
-            android:name="xposedsettings"
-            android:value="com.laibandis.gaba.SettingsActivity"/>
-
-        <activity
-            android:name="com.laibandis.gaba.SettingsActivity"
-            android:exported="true">
-
-            <!-- 🔥 КЛЮЧЕВОЙ МОМЕНТ -->
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="de.robv.android.xposed.category.MODULE_SETTINGS"/>
-            </intent-filter>
-
-        </activity>
-
-    </application>
 </manifest>

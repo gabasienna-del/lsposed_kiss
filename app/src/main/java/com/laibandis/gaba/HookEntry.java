@@ -6,6 +6,9 @@ import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
+import okhttp3.Call;
+import okhttp3.Request;
+
 public class HookEntry implements IXposedHookLoadPackage {
 
     private static final String TARGET = "sinet.startup.inDriver";
@@ -20,63 +23,56 @@ public class HookEntry implements IXposedHookLoadPackage {
 
         XposedBridge.log("✅ GABA hooked: " + lpparam.packageName);
 
-        /* ================= URL ================= */
+        /* ================= CALL.execute ================= */
         XposedHelpers.findAndHookMethod(
-                "okhttp3.Request",
+                "okhttp3.RealCall",
                 lpparam.classLoader,
-                "url",
-                new XC_MethodHook() {
-                    @Override
-                    protected void afterHookedMethod(MethodHookParam param) {
-                        Object url = param.getResult();
-                        if (url != null) {
-                            String u = url.toString();
-                            if (u.startsWith("https://")) {
-                                XposedBridge.log("🌐 GABA URL ▶ " + u);
-                            }
-                        }
-                    }
-                }
-        );
-
-        /* ================= BODY ================= */
-        XposedHelpers.findAndHookMethod(
-                "okhttp3.RequestBody",
-                lpparam.classLoader,
-                "writeTo",
-                okio.BufferedSink.class,
+                "execute",
                 new XC_MethodHook() {
                     @Override
                     protected void beforeHookedMethod(MethodHookParam param) {
                         try {
-                            okio.Buffer buffer = new okio.Buffer();
-                            Object bodyObj = param.thisObject;
+                            Call call = (Call) param.thisObject;
+                            Request req = call.request();
 
-                            XposedHelpers.callMethod(bodyObj, "writeTo", buffer);
-                            String body = buffer.readUtf8();
+                            XposedBridge.log("🌐 GABA URL ▶ " + req.url());
+                            XposedBridge.log("🔑 GABA HEADERS ▶\n" + req.headers());
 
-                            if (body != null && body.contains("{")) {
-                                XposedBridge.log("📦 GABA BODY ▶ " + body);
-                            }
                         } catch (Throwable t) {
-                            XposedBridge.log("❌ GABA BODY error: " + t);
+                            XposedBridge.log("❌ execute hook error: " + t);
                         }
                     }
                 }
         );
 
-        /* ================= HEADERS / TOKEN ================= */
+        /* ================= CALL.enqueue ================= */
         XposedHelpers.findAndHookMethod(
-                "okhttp3.Headers",
+                "okhttp3.RealCall",
                 lpparam.classLoader,
-                "toString",
+                "enqueue",
+                okhttp3.Callback.class,
                 new XC_MethodHook() {
                     @Override
-                    protected void afterHookedMethod(MethodHookParam param) {
-                        String headers = String.valueOf(param.getResult());
-                        String h = headers.toLowerCase();
-                        if (h.contains("authorization") || h.contains("token")) {
-                            XposedBridge.log("🔑 GABA HEADERS ▶\n" + headers);
+                    protected void beforeHookedMethod(MethodHookParam param) {
+                        try {
+                            Call call = (Call) param.thisObject;
+                            Request req = call.request();
+
+                            XposedBridge.log("🌐 GABA URL ▶ " + req.url());
+                            XposedBridge.log("🔑 GABA HEADERS ▶\n" + req.headers());
+
+                            if (req.body() != null) {
+                                okio.Buffer buffer = new okio.Buffer();
+                                req.body().writeTo(buffer);
+                                String body = buffer.readUtf8();
+
+                                if (body.contains("{")) {
+                                    XposedBridge.log("📦 GABA BODY ▶ " + body);
+                                }
+                            }
+
+                        } catch (Throwable t) {
+                            XposedBridge.log("❌ enqueue hook error: " + t);
                         }
                     }
                 }

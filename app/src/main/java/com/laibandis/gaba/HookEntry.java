@@ -21,7 +21,7 @@ public class HookEntry implements IXposedHookLoadPackage {
         XposedBridge.log("✅ laibandis.gaba hooked: " + lpparam.packageName);
 
         /* ===============================
-           🔑 Request.Builder.* headers
+           🔑 Request.Builder headers
            =============================== */
         try {
             Class<?> reqBuilder = XposedHelpers.findClass(
@@ -29,27 +29,19 @@ public class HookEntry implements IXposedHookLoadPackage {
                     lpparam.classLoader
             );
 
-            XposedBridge.hookAllMethods(
-                    reqBuilder,
-                    "addHeader",
-                    new XC_MethodHook() {
-                        @Override
-                        protected void beforeHookedMethod(MethodHookParam p) {
-                            logHeader(p);
-                        }
-                    }
-            );
+            XposedBridge.hookAllMethods(reqBuilder, "addHeader", new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam p) {
+                    logHeader(p);
+                }
+            });
 
-            XposedBridge.hookAllMethods(
-                    reqBuilder,
-                    "header",
-                    new XC_MethodHook() {
-                        @Override
-                        protected void beforeHookedMethod(MethodHookParam p) {
-                            logHeader(p);
-                        }
-                    }
-            );
+            XposedBridge.hookAllMethods(reqBuilder, "header", new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam p) {
+                    logHeader(p);
+                }
+            });
 
             XposedBridge.log("✅ Request.Builder hooks OK");
 
@@ -58,7 +50,7 @@ public class HookEntry implements IXposedHookLoadPackage {
         }
 
         /* ===============================
-           🔑 Headers.Builder.add(...)
+           🔑 Headers.Builder.add
            =============================== */
         try {
             Class<?> headersBuilder = XposedHelpers.findClass(
@@ -66,16 +58,12 @@ public class HookEntry implements IXposedHookLoadPackage {
                     lpparam.classLoader
             );
 
-            XposedBridge.hookAllMethods(
-                    headersBuilder,
-                    "add",
-                    new XC_MethodHook() {
-                        @Override
-                        protected void beforeHookedMethod(MethodHookParam p) {
-                            logHeader(p);
-                        }
-                    }
-            );
+            XposedBridge.hookAllMethods(headersBuilder, "add", new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam p) {
+                    logHeader(p);
+                }
+            });
 
             XposedBridge.log("✅ Headers.Builder hook OK");
 
@@ -84,7 +72,7 @@ public class HookEntry implements IXposedHookLoadPackage {
         }
 
         /* ===============================
-           🌐 RealInterceptorChain.proceed()
+           🌐 RealInterceptorChain (JSON BODY)
            =============================== */
         try {
             Class<?> chainCls = XposedHelpers.findClass(
@@ -92,37 +80,49 @@ public class HookEntry implements IXposedHookLoadPackage {
                     lpparam.classLoader
             );
 
-            XposedBridge.hookAllMethods(
-                    chainCls,
-                    "proceed",
-                    new XC_MethodHook() {
-                        @Override
-                        protected void beforeHookedMethod(MethodHookParam p) {
+            XposedBridge.hookAllMethods(chainCls, "proceed", new XC_MethodHook() {
 
-                            Object request = p.args[0];
+                @Override
+                protected void beforeHookedMethod(MethodHookParam p) throws Throwable {
 
-                            String url = String.valueOf(
-                                    XposedHelpers.callMethod(request, "url")
-                            );
+                    Object request = p.args[0];
 
-                            String auth = (String) XposedHelpers.callMethod(
-                                    request, "header", "Authorization"
-                            );
+                    String url = String.valueOf(
+                            XposedHelpers.callMethod(request, "url")
+                    );
 
-                            String token = (String) XposedHelpers.callMethod(
-                                    request, "header", "X-Access-Token"
-                            );
+                    Object body = XposedHelpers.callMethod(request, "body");
+                    if (body == null) return;
 
-                            if (auth != null || token != null) {
-                                XposedBridge.log(
-                                        "🌐 GABA ▶ REQ ▶ " + url +
-                                        " | Authorization=" + auth +
-                                        " | X-Access-Token=" + token
-                                );
-                            }
-                        }
+                    Class<?> bufferCls = XposedHelpers.findClass(
+                            "okio.Buffer",
+                            lpparam.classLoader
+                    );
+
+                    Object buffer = bufferCls.newInstance();
+
+                    XposedHelpers.callMethod(body, "writeTo", buffer);
+
+                    String bodyStr = (String) XposedHelpers.callMethod(
+                            buffer, "readUtf8"
+                    );
+
+                    if (bodyStr == null || bodyStr.isEmpty()) return;
+
+                    String low = bodyStr.toLowerCase();
+
+                    if (low.contains("token")
+                            || low.contains("authorization")
+                            || low.contains("order")
+                            || low.contains("trip")
+                            || low.contains("city")) {
+
+                        XposedBridge.log(
+                                "📦 GABA ▶ JSON BODY ▶ " + url + "\n" + bodyStr
+                        );
                     }
-            );
+                }
+            });
 
             XposedBridge.log("✅ RealInterceptorChain hook OK");
 

@@ -1,5 +1,5 @@
 plugins {
-    id 'com.android.application'
+    id 'com.android.library'
 }
 
 android {
@@ -7,19 +7,13 @@ android {
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.gaba.eskukap"
         minSdk 26
         targetSdk 34
-        versionCode 1
-        versionName "1.0"
     }
 
     buildTypes {
         release {
-            minifyEnabled true
-            proguardFiles getDefaultProguardFile(
-                'proguard-android-optimize.txt'
-            ), 'proguard-rules.pro'
+            minifyEnabled false
         }
         debug {
             minifyEnabled false

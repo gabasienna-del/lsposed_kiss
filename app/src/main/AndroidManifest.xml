@@ -1,23 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <application
-        android:label="lsposed_kiss"
-        android:allowBackup="false">
-
-        <!-- LSPosed / Xposed REQUIRED -->
-        <meta-data
-            android:name="xposedmodule"
-            android:value="true" />
-
-        <meta-data
-            android:name="xposeddescription"
-            android:value="JSON hook for intercity orders (OkHttp)" />
-
-        <meta-data
-            android:name="xposedminversion"
-            android:value="82" />
-
+    <application>
+        <meta-data android:name="xposedmodule" android:value="true"/>
+        <meta-data android:name="xposeddescription" android:value="LSPosed JSON hook"/>
+        <meta-data android:name="xposedminversion" android:value="82"/>
     </application>
 
 </manifest>

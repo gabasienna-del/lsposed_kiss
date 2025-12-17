@@ -11,67 +11,75 @@ public class HookEntry implements IXposedHookLoadPackage {
     private static final String TARGET = "sinet.startup.inDriver";
 
     static {
-        XposedBridge.log("🔥 laibandis.gaba HookEntry loaded");
+        XposedBridge.log("🔥 GABA HookEntry loaded");
     }
 
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) {
         if (!TARGET.equals(lpparam.packageName)) return;
 
-        XposedBridge.log("✅ laibandis.gaba hooked: " + lpparam.packageName);
+        XposedBridge.log("✅ GABA hooked: " + lpparam.packageName);
 
-        /* ===============================
-           🌐 OkHttp RealCall (UNIVERSAL)
-           =============================== */
-        try {
-            Class<?> realCallCls = XposedHelpers.findClass(
-                    "okhttp3.RealCall",
-                    lpparam.classLoader
-            );
-
-            // execute()
-            XposedBridge.hookAllMethods(realCallCls, "execute", new XC_MethodHook() {
-                @Override
-                protected void beforeHookedMethod(MethodHookParam p) throws Throwable {
-                    logRequest(p.thisObject);
+        /* ================= URL ================= */
+        XposedHelpers.findAndHookMethod(
+                "okhttp3.Request",
+                lpparam.classLoader,
+                "url",
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) {
+                        Object url = param.getResult();
+                        if (url != null) {
+                            String u = url.toString();
+                            if (u.startsWith("https://")) {
+                                XposedBridge.log("🌐 GABA URL ▶ " + u);
+                            }
+                        }
+                    }
                 }
-            });
+        );
 
-            // enqueue()
-            XposedBridge.hookAllMethods(realCallCls, "enqueue", new XC_MethodHook() {
-                @Override
-                protected void beforeHookedMethod(MethodHookParam p) throws Throwable {
-                    logRequest(p.thisObject);
+        /* ================= BODY ================= */
+        XposedHelpers.findAndHookMethod(
+                "okhttp3.RequestBody",
+                lpparam.classLoader,
+                "writeTo",
+                okio.BufferedSink.class,
+                new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) {
+                        try {
+                            okio.Buffer buffer = new okio.Buffer();
+                            Object bodyObj = param.thisObject;
+
+                            XposedHelpers.callMethod(bodyObj, "writeTo", buffer);
+                            String body = buffer.readUtf8();
+
+                            if (body != null && body.contains("{")) {
+                                XposedBridge.log("📦 GABA BODY ▶ " + body);
+                            }
+                        } catch (Throwable t) {
+                            XposedBridge.log("❌ GABA BODY error: " + t);
+                        }
+                    }
                 }
-            });
+        );
 
-            XposedBridge.log("✅ RealCall hook OK");
-
-        } catch (Throwable t) {
-            XposedBridge.log("❌ RealCall hook failed: " + t);
-        }
-    }
-
-    /* ===============================
-       🔎 Request logger
-       =============================== */
-    private void logRequest(Object realCall) {
-        try {
-            Object request = XposedHelpers.callMethod(realCall, "request");
-
-            String url = String.valueOf(
-                    XposedHelpers.callMethod(request, "url")
-            );
-
-            Object headers = XposedHelpers.callMethod(request, "headers");
-
-            XposedBridge.log(
-                    "🌐 GABA ▶ CALL ▶ " + url +
-                    "\nHEADERS: " + headers
-            );
-
-        } catch (Throwable t) {
-            XposedBridge.log("❌ logRequest error: " + t);
-        }
+        /* ================= HEADERS / TOKEN ================= */
+        XposedHelpers.findAndHookMethod(
+                "okhttp3.Headers",
+                lpparam.classLoader,
+                "toString",
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) {
+                        String headers = String.valueOf(param.getResult());
+                        String h = headers.toLowerCase();
+                        if (h.contains("authorization") || h.contains("token")) {
+                            XposedBridge.log("🔑 GABA HEADERS ▶\n" + headers);
+                        }
+                    }
+                }
+        );
     }
 }
